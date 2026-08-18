@@ -9,6 +9,16 @@ exists off-the-shelf, so we detect text blobs directly -- spine text is
 what we actually need to read anyway. CPU inference, no training.
 
 Weights are not committed (96MB); see scripts/download_weights.py.
+
+TILING: EAST takes a fixed 320x320 input. Naively resizing a full shelf
+photo (e.g. 857x1200) down to 320x320 shrinks spine letters to ~1-2px --
+below what the model can see (verified: whole-image confidence maxed out
+at 0.0002 on a real test photo, i.e. nothing detected). Instead we slide
+a 320x320 window across the image at native resolution (no downscale per
+tile) with overlap, run EAST on each tile, map results back to original
+coordinates, then run one global NMS + merge pass across all tiles. This
+is the fix that took real-photo confidence from ~0 to ~1.0 on the same
+text.
 """
 import os
 import cv2
@@ -18,6 +28,8 @@ WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "weights", "frozen_east_t
 
 # EAST requires input dims that are multiples of 32.
 INPUT_W, INPUT_H = 320, 320
+TILE_STRIDE = 240  # 25% overlap between adjacent tiles, so text spanning
+                    # a tile boundary still appears whole in a neighbor
 CONF_THRESHOLD = 0.5
 NMS_THRESHOLD = 0.4
 
@@ -63,6 +75,35 @@ def _decode_predictions(scores, geometry):
     return boxes, confidences
 
 
+def _tile_origins(length, tile_size, stride):
+    """Top-left origins covering [0, length) with the given tile size and
+    stride, always including a final tile flush with the far edge so
+    nothing past the last full stride gets skipped."""
+    if length <= tile_size:
+        return [0]
+    origins = list(range(0, length - tile_size + 1, stride))
+    last = length - tile_size
+    if origins[-1] != last:
+        origins.append(last)
+    return origins
+
+
+def _run_east_on_tile(net, tile):
+    """Run EAST on a single tile already at exactly INPUT_W x INPUT_H (no
+    resize -- that's the whole point of tiling). Returns raw boxes in
+    tile-local pixel coordinates plus confidences."""
+    blob = cv2.dnn.blobFromImage(
+        tile, 1.0, (INPUT_W, INPUT_H),
+        (123.68, 116.78, 103.94), swapRB=True, crop=False,
+    )
+    net.setInput(blob)
+    scores, geometry = net.forward([
+        "feature_fusion/Conv_7/Sigmoid",
+        "feature_fusion/concat_3",
+    ])
+    return _decode_predictions(scores, geometry)
+
+
 def detect_regions(image_bytes: bytes, pad_frac: float = 0.15):
     """Detect candidate text regions in a shelf photo.
 
@@ -77,32 +118,35 @@ def detect_regions(image_bytes: bytes, pad_frac: float = 0.15):
         raise DetectorError("Could not decode image bytes")
 
     orig_h, orig_w = img.shape[:2]
-    rW, rH = orig_w / float(INPUT_W), orig_h / float(INPUT_H)
-
-    blob = cv2.dnn.blobFromImage(
-        img, 1.0, (INPUT_W, INPUT_H),
-        (123.68, 116.78, 103.94), swapRB=True, crop=False,
-    )
     net = _get_net()
-    net.setInput(blob)
-    scores, geometry = net.forward([
-        "feature_fusion/Conv_7/Sigmoid",
-        "feature_fusion/concat_3",
-    ])
 
-    boxes, confidences = _decode_predictions(scores, geometry)
-    if not boxes:
+    x_origins = _tile_origins(orig_w, INPUT_W, TILE_STRIDE)
+    y_origins = _tile_origins(orig_h, INPUT_H, TILE_STRIDE)
+
+    all_boxes, all_confidences = [], []
+    for ty in y_origins:
+        for tx in x_origins:
+            tile = img[ty:ty + INPUT_H, tx:tx + INPUT_W]
+            th, tw = tile.shape[:2]
+            if th < INPUT_H or tw < INPUT_W:
+                # only happens if the image itself is smaller than one tile
+                tile = cv2.copyMakeBorder(
+                    tile, 0, INPUT_H - th, 0, INPUT_W - tw,
+                    cv2.BORDER_REPLICATE,
+                )
+            boxes, confidences = _run_east_on_tile(net, tile)
+            for (sx, sy, ex, ey), conf in zip(boxes, confidences):
+                all_boxes.append((sx + tx, sy + ty, ex + tx, ey + ty))
+                all_confidences.append(conf)
+
+    if not all_boxes:
         return []
 
-    indices = cv2.dnn.NMSBoxes(boxes, confidences, CONF_THRESHOLD, NMS_THRESHOLD)
+    indices = cv2.dnn.NMSBoxes(all_boxes, all_confidences, CONF_THRESHOLD, NMS_THRESHOLD)
     if indices is None or len(indices) == 0:
         return []
 
-    raw_boxes = []
-    for i in np.array(indices).flatten():
-        sx, sy, ex, ey = boxes[i]
-        x1, y1, x2, y2 = sx * rW, sy * rH, ex * rW, ey * rH
-        raw_boxes.append((x1, y1, x2, y2))
+    raw_boxes = [all_boxes[i] for i in np.array(indices).flatten()]
 
     # EAST finds individual words/text lines, not whole spines. Book titles
     # on a spine are usually stacked as several separate word-boxes in the
@@ -130,22 +174,56 @@ def detect_regions(image_bytes: bytes, pad_frac: float = 0.15):
     return results
 
 
-def _merge_by_x_overlap(boxes, orig_h, x_gap_frac=0.02):
-    """Union boxes whose x-ranges overlap (or nearly touch) into one region
-    spanning their combined extent. Spine text stacks vertically within a
-    narrow x-band, so this collapses per-word boxes into per-spine boxes."""
+def _merge_by_x_overlap(boxes, orig_h):
+    """Union boxes into spine-level regions. Spine text stacks vertically
+    within a narrow x-band with small gaps between words/lines, so we merge
+    boxes that are BOTH close in x (same column) AND close in y (same
+    shelf row) -- x-overlap alone was found to chain word-boxes down
+    multiple shelves into a single giant strip on a real test photo, since
+    a tall bookcase can have several spines that happen to line up in x.
+    Union-Find over pairwise proximity, not a single sorted-sweep, so it
+    isn't order-dependent."""
     if not boxes:
         return []
-    x_gap = orig_h * x_gap_frac  # small absolute tolerance, image-scale
-    boxes = sorted(boxes, key=lambda b: b[0])
-    merged = [list(boxes[0])]
-    for x1, y1, x2, y2 in boxes[1:]:
-        last = merged[-1]
-        if x1 <= last[2] + x_gap:
-            last[0] = min(last[0], x1)
-            last[1] = min(last[1], y1)
-            last[2] = max(last[2], x2)
-            last[3] = max(last[3], y2)
-        else:
-            merged.append([x1, y1, x2, y2])
-    return [tuple(b) for b in merged]
+
+    n = len(boxes)
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i, j):
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[ri] = rj
+
+    x_gap = orig_h * 0.02  # small absolute tolerance, image-scale
+    for i in range(n):
+        x1i, y1i, x2i, y2i = boxes[i]
+        for j in range(i + 1, n):
+            x1j, y1j, x2j, y2j = boxes[j]
+            x_close = x1i <= x2j + x_gap and x1j <= x2i + x_gap
+            if not x_close:
+                continue
+            # y gap allowed scales with the boxes' own height -- word-to-word
+            # spacing within a spine title, not shelf-to-shelf spacing.
+            y_gap_allowed = max(y2i - y1i, y2j - y1j) * 1.5
+            y_close = y1i <= y2j + y_gap_allowed and y1j <= y2i + y_gap_allowed
+            if y_close:
+                union(i, j)
+
+    groups = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(boxes[i])
+
+    merged = []
+    for group in groups.values():
+        x1 = min(b[0] for b in group)
+        y1 = min(b[1] for b in group)
+        x2 = max(b[2] for b in group)
+        y2 = max(b[3] for b in group)
+        merged.append((x1, y1, x2, y2))
+    return merged
