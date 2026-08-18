@@ -3,3 +3,6 @@ djangorestframework
 django-cors-headers
 python-dotenv
 requests
+opencv-python-headless
+numpy
+rapidfuzz
