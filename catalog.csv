@@ -1,0 +1,123 @@
+id,title,alt_titles,author,author_alt_forms,edition_note,isbn
+1,1984,,George Orwell,"Orwell, George",Signet Classics paperback,9780451524935
+2,1984,,George Orwell,"Orwell, George",Centennial Edition hardcover,9780151010264
+3,Pride and Prejudice,,Jane Austen,"Austen, Jane",Penguin Classics,9780141439518
+4,Pride and Prejudice,,Jane Austen,"Austen, Jane",Barnes & Noble Classics,9781593080184
+5,Harry Potter and the Philosopher's Stone,Harry Potter and the Sorcerer's Stone,J.K. Rowling,"Rowling, J. K.",UK edition,9780747532699
+6,Harry Potter and the Sorcerer's Stone,Harry Potter and the Philosopher's Stone,J.K. Rowling,"Rowling, J. K.",US edition,9780590353427
+7,And Then There Were None,Ten Little Indians,Agatha Christie,"Christie, Agatha",Original UK title differs,9780062073488
+8,Emma,,Jane Austen,"Austen, Jane",1815 novel,9780141439587
+9,Emma,,Alexander McCall Smith,"McCall Smith, Alexander",2014 modern retelling,9780008150487
+10,The Circle,,Dave Eggers,"Eggers, Dave",2013 novel,9780345807298
+11,The Circle,,Bernard Minier,"Minier, Bernard","French thriller, translated",9781510707486
+12,The Lord of the Rings,LOTR Omnibus,J.R.R. Tolkien,"Tolkien, J. R. R.",Single-volume omnibus edition,9780618640157
+13,The Fellowship of the Ring,,J.R.R. Tolkien,"Tolkien, J. R. R.",LOTR Book 1,9780547928210
+14,The Two Towers,,J.R.R. Tolkien,"Tolkien, J. R. R.",LOTR Book 2,9780547928203
+15,The Return of the King,,J.R.R. Tolkien,"Tolkien, J. R. R.",LOTR Book 3,9780547928197
+16,A Song of Ice and Fire,The Ice and Fire Collection,George R.R. Martin,"Martin, George R. R.",5-book box set,9780345535528
+17,A Game of Thrones,,George R.R. Martin,"Martin, George R. R.",Book 1,9780553593716
+18,A Clash of Kings,,George R.R. Martin,"Martin, George R. R.",Book 2,9780553579901
+19,Dune,,Frank Herbert,"Herbert, Frank",Book 1,9780441013593
+20,Dune Messiah,,Frank Herbert,"Herbert, Frank",Book 2,9780441172696
+21,The Stand,,Stephen King,"King, Stephen",Original 1978 edition,9780307743688
+22,The Stand: The Complete and Uncut Edition,,Stephen King,"King, Stephen",1990 expanded edition,9780385199570
+23,The Girl on the Train,,Paula Hawkins,"Hawkins, Paula",,9781594634024
+24,The Girl with the Dragon Tattoo,,Stieg Larsson,"Larsson, Stieg",,9780307949486
+25,One Hundred Years of Solitude,Cien anos de soledad,Gabriel Garcia Marquez,"Garcia Marquez, Gabriel; Gabriel García Márquez",,9780060883287
+26,Love in the Time of Cholera,,Gabriel Garcia Marquez,"Garcia Marquez, Gabriel; G. Garcia Marquez",,9780307389732
+27,Crime and Punishment,,Fyodor Dostoevsky,"Dostoevsky, Fyodor; F.M. Dostoevsky; F. Dostoyevsky",,9780486415871
+28,The Brothers Karamazov,,Fyodor Dostoevsky,"Dostoevsky, Fyodor; F.M. Dostoevsky",,9780374528379
+29,The Great Gatsby,,F. Scott Fitzgerald,"Fitzgerald, F. Scott",,9780743273565
+30,To Kill a Mockingbird,,Harper Lee,"Lee, Harper",,9780061120084
+31,The Catcher in the Rye,,J.D. Salinger,"Salinger, J. D.",,9780316769488
+32,Brave New World,,Aldous Huxley,"Huxley, Aldous",,9780060850524
+33,Fahrenheit 451,,Ray Bradbury,"Bradbury, Ray",,9781451673319
+34,The Hobbit,,J.R.R. Tolkien,"Tolkien, J. R. R.",,9780547928227
+35,The Alchemist,,Paulo Coelho,"Coelho, Paulo",,9780062315007
+36,Life of Pi,,Yann Martel,"Martel, Yann",,9780156027328
+37,The Kite Runner,,Khaled Hosseini,"Hosseini, Khaled",,9781594631931
+38,A Thousand Splendid Suns,,Khaled Hosseini,"Hosseini, Khaled",,9781594489501
+39,The Da Vinci Code,,Dan Brown,"Brown, Dan",,9780307474278
+40,Angels & Demons,,Dan Brown,"Brown, Dan",,9781416524793
+41,Gone Girl,,Gillian Flynn,"Flynn, Gillian",,9780307588371
+42,Sharp Objects,,Gillian Flynn,"Flynn, Gillian",,9780307341556
+43,The Hunger Games,,Suzanne Collins,"Collins, Suzanne",,9780439023528
+44,Catching Fire,,Suzanne Collins,"Collins, Suzanne",,9780439023498
+45,Mockingjay,,Suzanne Collins,"Collins, Suzanne",,9780439023511
+46,Divergent,,Veronica Roth,"Roth, Veronica",,9780062024039
+47,The Fault in Our Stars,,John Green,"Green, John",,9780525478812
+48,Looking for Alaska,,John Green,"Green, John",,9780142402511
+49,Twilight,,Stephenie Meyer,"Meyer, Stephenie",,9780316015844
+50,New Moon,,Stephenie Meyer,"Meyer, Stephenie",,9780316024969
+51,The Shining,,Stephen King,"King, Stephen",,9780307743657
+52,It,,Stephen King,"King, Stephen",,9781501142970
+53,Misery,,Stephen King,"King, Stephen",,9781501143106
+54,Where the Crawdads Sing,,Delia Owens,"Owens, Delia",,9780735219090
+55,The Silent Patient,,Alex Michaelides,"Michaelides, Alex",,9781250301697
+56,Educated,,Tara Westover,"Westover, Tara",,9780399590504
+57,Becoming,,Michelle Obama,"Obama, Michelle",,9781524763138
+58,Sapiens,,Yuval Noah Harari,"Harari, Yuval Noah",,9780062316097
+59,Homo Deus,,Yuval Noah Harari,"Harari, Yuval Noah",,9780062464316
+60,Atomic Habits,,James Clear,"Clear, James",,9780735211292
+61,The Subtle Art of Not Giving a F*ck,,Mark Manson,"Manson, Mark",,9780062457714
+62,"Thinking, Fast and Slow",,Daniel Kahneman,"Kahneman, Daniel",,9780374533557
+63,Outliers,,Malcolm Gladwell,"Gladwell, Malcolm",,9780316017930
+64,Blink,,Malcolm Gladwell,"Gladwell, Malcolm",,9780316010665
+65,The Tipping Point,,Malcolm Gladwell,"Gladwell, Malcolm",,9780316346627
+66,Freakonomics,,Steven D. Levitt,"Levitt, Steven D.; S.D. Levitt",,9780061234002
+67,The Book Thief,,Markus Zusak,"Zusak, Markus",,9780375842207
+68,All the Light We Cannot See,,Anthony Doerr,"Doerr, Anthony",,9781501173219
+69,The Road,,Cormac McCarthy,"McCarthy, Cormac",,9780307387899
+70,No Country for Old Men,,Cormac McCarthy,"McCarthy, Cormac",,9780375706677
+71,Beloved,,Toni Morrison,"Morrison, Toni",,9781400033416
+72,The Bluest Eye,,Toni Morrison,"Morrison, Toni",,9780307278449
+73,Slaughterhouse-Five,,Kurt Vonnegut,"Vonnegut, Kurt",,9780385333849
+74,Cat's Cradle,,Kurt Vonnegut,"Vonnegut, Kurt",,9780385333481
+75,Norwegian Wood,,Haruki Murakami,"Murakami, Haruki",,9780375704024
+76,Kafka on the Shore,,Haruki Murakami,"Murakami, Haruki",,9781400079278
+77,The Handmaid's Tale,,Margaret Atwood,"Atwood, Margaret",,9780385490818
+78,Oryx and Crake,,Margaret Atwood,"Atwood, Margaret",,9780385721677
+79,American Gods,,Neil Gaiman,"Gaiman, Neil",,9780062572110
+80,Good Omens,,Neil Gaiman,"Gaiman, Neil; Terry Pratchett",,9780060853976
+81,The Name of the Wind,,Patrick Rothfuss,"Rothfuss, Patrick",,9780756404741
+82,Mistborn,,Brandon Sanderson,"Sanderson, Brandon",,9780765350381
+83,The Way of Kings,,Brandon Sanderson,"Sanderson, Brandon",,9780765326355
+84,Ender's Game,,Orson Scott Card,"Card, Orson Scott",,9780812550702
+85,Foundation,,Isaac Asimov,"Asimov, Isaac",,9780553293357
+86,"I, Robot",,Isaac Asimov,"Asimov, Isaac",,9780553294385
+87,The Martian,,Andy Weir,"Weir, Andy",,9780553418026
+88,Ready Player One,,Ernest Cline,"Cline, Ernest",,9780307887436
+89,The Girl with All the Gifts,,M.R. Carey,"Carey, M. R.",,9780316278157
+90,World War Z,,Max Brooks,"Brooks, Max",,9780307346612
+91,Circe,,Madeline Miller,"Miller, Madeline",,9780316556347
+92,The Song of Achilles,,Madeline Miller,"Miller, Madeline",,9780062060624
+93,Where the Wild Things Are,,Maurice Sendak,"Sendak, Maurice",,9780064431781
+94,Charlotte's Web,,E.B. White,"White, E. B.",,9780064400558
+95,Matilda,,Roald Dahl,"Dahl, Roald",,9780142410370
+96,Charlie and the Chocolate Factory,,Roald Dahl,"Dahl, Roald",,9780142410318
+97,The Chronicles of Narnia,,C.S. Lewis,"Lewis, C. S.",,9780066238500
+98,"The Lion, the Witch and the Wardrobe",,C.S. Lewis,"Lewis, C. S.",,9780064404990
+99,Little Women,,Louisa May Alcott,"Alcott, Louisa May",,9780147514011
+100,Jane Eyre,,Charlotte Bronte,"Bronte, Charlotte; Charlotte Brontë",,9780141441146
+101,Wuthering Heights,,Emily Bronte,"Bronte, Emily; Emily Brontë",,9780141439556
+102,Moby-Dick,,Herman Melville,"Melville, Herman",,9781503280786
+103,War and Peace,,Leo Tolstoy,"Tolstoy, Leo; L.N. Tolstoy",,9781400079988
+104,Anna Karenina,,Leo Tolstoy,"Tolstoy, Leo; L.N. Tolstoy",,9780143035008
+105,The Odyssey,,Homer,Homer,,9780140268867
+106,The Old Man and the Sea,,Ernest Hemingway,"Hemingway, Ernest",,9780684801223
+107,A Farewell to Arms,,Ernest Hemingway,"Hemingway, Ernest",,9780684801469
+108,The Sun Also Rises,,Ernest Hemingway,"Hemingway, Ernest",,9780743297332
+109,Frankenstein,,Mary Shelley,"Shelley, Mary",,9780486282114
+110,Dracula,,Bram Stoker,"Stoker, Bram",,9780486411095
+111,The Picture of Dorian Gray,,Oscar Wilde,"Wilde, Oscar",,9780141439570
+112,Slaughterhouse Five,,Kurt Vonnegut,"Vonnegut, Kurt",,9780440180296
+113,Educated: A Memoir,,Tara Westover,"Westover, Tara",,9780399590511
+114,The Immortal Life of Henrietta Lacks,,Rebecca Skloot,"Skloot, Rebecca",,9781400052189
+115,Into the Wild,,Jon Krakauer,"Krakauer, Jon",,9780385486804
+116,Into Thin Air,,Jon Krakauer,"Krakauer, Jon",,9780385494786
+117,Born a Crime,,Trevor Noah,"Noah, Trevor",,9780399588174
+118,The Glass Castle,,Jeannette Walls,"Walls, Jeannette",,9780743247542
+119,Unbroken,,Laura Hillenbrand,"Hillenbrand, Laura",,9780812974492
+120,Seabiscuit,,Laura Hillenbrand,"Hillenbrand, Laura",,9780449005615
+121,The Power of Habit,,Charles Duhigg,"Duhigg, Charles",,9780812981605
+122,Man's Search for Meaning,,Viktor E. Frankl,"Frankl, Viktor E.; V.E. Frankl",,9780807014295
