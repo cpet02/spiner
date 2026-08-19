@@ -63,11 +63,11 @@ READ_PROMPT = (
     "do not guess or invent a plausible-sounding title."
 )
 
-# Rough per-1K-token pricing for a mid-tier hosted VLM via OpenRouter, used
-# for the estimated-cost-per-image number in the README. Deliberately a
-# constant here (not fetched live) -- see README for the exact model/rate
-# used at measurement time.
-EST_COST_PER_CALL_USD = 0.003
+# Measured from actual OpenRouter billing during pipeline development/testing:
+# $0.21 spent over 163 VLM calls (anthropic/claude-sonnet-4.5) = ~$0.00129/call.
+# Deliberately a constant here (not fetched live) -- re-measure from the
+# OpenRouter dashboard if the model changes.
+EST_COST_PER_CALL_USD = 0.00129
 
 # VLM calls are one blocking HTTP request each; the reads are independent of
 # each other, so we fire them concurrently instead of one-at-a-time. This is
