@@ -204,6 +204,56 @@ explicit actions.
 - **Network/timeout failure calling `/api/scan/` itself** — Retry
   button, not a frozen spinner.
 
+## Bugs found by a targeted code-review pass
+
+After the app was working end-to-end, a deep correctness audit (5
+parallel reviews, one per major file) found real bugs invisible from
+either reading the diffs or the passing test suite — all fixed and
+verified live:
+
+- **Case-sensitivity in the matcher.** `rapidfuzz.token_sort_ratio` is
+  case-sensitive by default; an ALL-CAPS spine read (very common on
+  real books) scored near-zero against a correctly-cased catalog entry
+  purely on letter case. `"THE LORD OF THE RINGS"` scored 28.6% against
+  the catalog's exact `"The Lord of the Rings"`. Fixed with
+  `rapidfuzz.utils.default_process`.
+- **`cv2.dnn.NMSBoxes` fed the wrong box format.** It expects
+  `(x,y,w,h)`, not `(x1,y1,x2,y2)` corners. Feeding corners inflates
+  every detection into a phantom rect whose size scales with its
+  absolute position in the photo — two genuinely separate books
+  hundreds of px apart can exceed the suppression threshold and one
+  silently vanishes, worse for detections deeper into the image.
+  Verified with a direct repro. **Very likely the real explanation**
+  behind the detection-recall limitation documented below as an
+  accepted EAST constraint, not a bug in this code.
+- **Missing author scored *higher* than a correct one, in the
+  matcher.** The 65/35 title/author weighting was a no-op whenever no
+  author was read — `match("Dune", "")` scored 100.0 (auto) while
+  `match("Dune", "Herbert")` (correct!) scored 89.5 (review). Worse: any
+  exact title match auto-confirmed regardless of ambiguity —
+  `match("Emma", "")` scored 100.0 auto against *both* the Austen and
+  McCall Smith catalog rows, a coin flip stamped confident. Fixed: a
+  missing author is now honestly unscored (not a fabricated 100), and
+  the top two candidates are checked for a tie — no author to break it
+  demotes `auto` to `review` instead of guessing.
+- **Three exception-escape paths in "never raises."** `pipeline.py`'s
+  docstring promises no exception ever leaves `run_pipeline()`; three
+  real inputs could break that: a VLM response with `content: null`
+  (valid on OpenRouter, e.g. `finish_reason: "length"`), a VLM
+  returning a list instead of a string for `title` (plausible —
+  `READ_PROMPT` itself says "one or more book spines"), and trailing
+  prose containing a stray `}` corrupting `rfind("}")`-based JSON
+  extraction. All three guarded now.
+- **The literal string `"null"` was accepted as a real title.**
+  `READ_PROMPT`'s own schema example showed the null placeholder
+  *inside quotes*, inviting exactly this. Sentinel-checked now, prompt
+  wording fixed too.
+- **Mobile: library-save failures were silently swallowed.**
+  `postToLibrary()` never checked `res.ok` — a 400 resolved normally,
+  so a failed save looked identical to a successful one everywhere it
+  was called, including removing a review item from the queue before
+  confirming the save actually landed.
+
 ## Key decisions and tradeoffs
 
 - **Precision over recall on the VLM read step, revisited twice.**
@@ -279,23 +329,27 @@ Deliberate, not accidental — each one traded against the ~8-hour budget:
 
 ## What's unfinished, and what I'd do with another day
 
-The single biggest open gap is **detection recall and box precision**:
-EAST finds roughly 14 of ~50 visible spines on a dense shelf, and the
-merge heuristic sometimes stitches only a fragment of a spine's text
-into one region — visible directly now via the review screen's crop
-thumbnails (see "Scope cuts" above for why this was documented rather
-than chased). With another day, in cheapest-first order:
+Detection recall was initially written off as an inherent EAST
+limitation (~14/50 visible spines on a dense shelf). A later
+correctness pass found that a meaningful chunk of it was actually a
+box-format bug (`cv2.dnn.NMSBoxes` fed the wrong rect shape — see "Bugs
+found by a targeted code-review pass" above), now fixed. The *true*
+remaining ceiling hasn't been re-measured since that fix, which is
+itself the honest next step. With another day, cheapest-first:
 
-1. Retry pass on `unreadable` crops at further zoom before giving up —
+1. Re-measure detection recall against the existing test photos now
+   that the NMS bug is fixed, before assuming any further gap is a
+   real EAST limitation rather than another latent bug.
+2. Retry pass on `unreadable` crops at further zoom before giving up —
    detection already found the region, so this is a few extra VLM
    calls, not new detector work.
-2. A real precision/recall harness against a labeled photo set, to
+3. A real precision/recall harness against a labeled photo set, to
    replace live spot-checks with numbers that survive scrutiny.
-3. Loosen the merge heuristic's y-gap tolerance to catch more
-   full-spine regions, re-validated against the existing test photos
-   before trusting it.
-4. A different local detector (CRAFT, PaddleOCR's DB) if (1)-(3) hit a
-   ceiling — the biggest lever, also the most expensive to validate.
+4. Loosen the merge heuristic's y-gap tolerance to catch more
+   full-spine regions (box precision — spines still sometimes only
+   partially captured), re-validated against the existing test photos.
+5. A different local detector (CRAFT, PaddleOCR's DB) if (1)-(4) hit a
+   real ceiling — the biggest lever, also the most expensive to validate.
 
 ## AI usage
 

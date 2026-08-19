@@ -74,6 +74,22 @@ scaffolding. Honest breakdown of where and how.
   entries (real titles, plausible ISBNs) and wove in additional
   messiness traps per my instruction to match the original batch's
   intent, not just add clean titles.
+- **Matcher case-sensitivity bug**: found by Claude testing new close-up
+  photos I supplied, not by me reporting a symptom — a spine read as
+  ALL CAPS was scoring near-zero against a correctly-cased catalog
+  entry. I asked for the fix, verified it against the same photos
+  myself before accepting.
+- **Deep correctness audit**: I asked directly whether a fresh,
+  high-effort review pass could find more bugs like the case-
+  sensitivity one, given I had budget left. Claude ran 5 parallel
+  full-file audits (detector.py, matcher.py, pipeline.py + ai_client.py,
+  views.py/models.py/serializers.py, mobile/App.js) rather than one
+  shallow pass. I did not accept the findings on faith: for the
+  highest-impact one (an OpenCV API misuse in NMS that was silently
+  dropping real detections), I had Claude construct and run a direct
+  numeric repro before touching any code, since "an agent said so" is
+  not the same as verified. Every fix was re-tested (unit tests +
+  a live scan against the real backend) before I considered it done.
 
 ## What I did not delegate
 
