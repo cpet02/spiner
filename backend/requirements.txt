@@ -6,3 +6,5 @@ requests
 opencv-python-headless
 numpy
 rapidfuzz
+pytest
+Pillow

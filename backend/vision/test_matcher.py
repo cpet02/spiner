@@ -1,6 +1,9 @@
+import os
+
 from matcher import load_catalog, match
 
-CATALOG = load_catalog("catalog.csv")
+_CATALOG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "catalog.csv")
+CATALOG = load_catalog(_CATALOG_PATH)
 
 
 def top(title, author=""):
