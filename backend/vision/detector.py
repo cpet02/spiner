@@ -157,7 +157,18 @@ def detect_regions(image_bytes: bytes, pad_frac: float = 0.15):
     if not all_boxes:
         return []
 
-    indices = cv2.dnn.NMSBoxes(all_boxes, all_confidences, CONF_THRESHOLD, NMS_THRESHOLD)
+    # cv2.dnn.NMSBoxes expects (x, y, w, h) rects, not (x1, y1, x2, y2)
+    # corners -- all_boxes is corners. Feeding corners directly makes NMS
+    # interpret x2/y2 as a width/height, inflating every box into a phantom
+    # rect anchored at (x1, y1) whose size grows with absolute position in
+    # the photo. Two genuinely separate books hundreds of px apart can end
+    # up with >40% "IoU" under that phantom rect and one gets silently
+    # suppressed -- worse the further into the image (bottom/right shelves
+    # hit hardest). Verified: two boxes 400px apart at (2200,3300) and
+    # (2600,3300) on a 3024x4032-scale photo -- one is dropped fed as
+    # corners, both survive fed as (x,y,w,h).
+    nms_rects = [(x1, y1, x2 - x1, y2 - y1) for x1, y1, x2, y2 in all_boxes]
+    indices = cv2.dnn.NMSBoxes(nms_rects, all_confidences, CONF_THRESHOLD, NMS_THRESHOLD)
     if indices is None or len(indices) == 0:
         return []
 
@@ -169,7 +180,7 @@ def detect_regions(image_bytes: bytes, pad_frac: float = 0.15):
     # single spine-level region before cropping. This is the difference
     # between "1 crop per book" and "1 crop per word" -- directly controls
     # how many VLM calls (i.e. how much $) we spend per photo.
-    merged = _merge_by_x_overlap(raw_boxes, orig_h)
+    merged = _merge_by_x_overlap(raw_boxes, orig_w)
 
     results = []
     for x1, y1, x2, y2 in merged:
@@ -190,7 +201,7 @@ def detect_regions(image_bytes: bytes, pad_frac: float = 0.15):
     return results
 
 
-def _merge_by_x_overlap(boxes, orig_h):
+def _merge_by_x_overlap(boxes, orig_w):
     """Union boxes into spine-level regions. Spine text stacks vertically
     within a narrow x-band with small gaps between words/lines, so we merge
     boxes that are BOTH close in x (same column) AND close in y (same
@@ -216,7 +227,13 @@ def _merge_by_x_overlap(boxes, orig_h):
         if ri != rj:
             parent[ri] = rj
 
-    x_gap = orig_h * 0.02  # small absolute tolerance, image-scale
+    # Tolerance for the x-axis proximity check -- scaled by image WIDTH,
+    # not height (was orig_h, a dimensional mismatch: a horizontal gap
+    # tolerance scaled by the vertical dimension gives the wrong
+    # tolerance for any non-square photo -- too tight on a wide/landscape
+    # shelf, wide enough on a narrow/portrait crop to bridge two separate
+    # spines into one crop).
+    x_gap = orig_w * 0.02
     for i in range(n):
         x1i, y1i, x2i, y2i = boxes[i]
         for j in range(i + 1, n):
