@@ -1,7 +1,10 @@
+from rest_framework import generics
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from . import pipeline
+from .models import LibraryEntry
+from .serializers import LibraryEntrySerializer
 
 
 @api_view(['POST'])
@@ -16,3 +19,12 @@ def scan_shelf(request):
 
     result = pipeline.run_pipeline(upload.read())
     return Response(result)
+
+
+class LibraryListCreate(generics.ListCreateAPIView):
+    """GET lists the user's confirmed library, newest first. POST adds one
+    entry -- called when the app confirms an auto-match or the user
+    resolves a review-step item (confirm/correct). Discarded books never
+    reach this endpoint."""
+    queryset = LibraryEntry.objects.all()
+    serializer_class = LibraryEntrySerializer
