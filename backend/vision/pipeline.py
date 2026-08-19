@@ -61,8 +61,10 @@ READ_PROMPT = (
     "in different font sizes on the same spine -- read the COMPLETE "
     "title, not just the first word or line you're confident about. "
     "Respond with ONLY a JSON object, no prose, no markdown fences: "
-    '{"title": "<title or null>", "author": "<author or null>"}. '
-    "If you cannot confidently read a title at all, set title to null -- "
+    '{"title": <title as a string, or the JSON literal null>, '
+    '"author": <author as a string, or the JSON literal null>}. '
+    "If you cannot confidently read a title at all, set title to the "
+    "JSON literal null (not the text \"null\") -- "
     "do not guess or invent a plausible-sounding title. But if you can "
     "read part of the title confidently, don't truncate it -- include "
     "every word you can actually read, in order."
@@ -81,6 +83,15 @@ EST_COST_PER_CALL_USD = 0.00129
 MAX_CONCURRENT_VLM_CALLS = 8
 
 
+# Placeholder strings a VLM sometimes emits instead of a real null --
+# READ_PROMPT's schema example shows the null placeholder INSIDE quotes
+# ({"title": "<title or null>"}), which invites a literal string "null"
+# back rather than JSON null. Treated as "didn't read a title", same as
+# real null -- otherwise these silently look like confident matches and
+# get fuzzy-matched against the whole catalog.
+_NULL_TITLE_SENTINELS = {"null", "none", "n/a", "na", "unknown", ""}
+
+
 def _parse_vlm_json(raw: str) -> dict:
     """VLMs occasionally wrap JSON in ```json fences or add stray prose
     even when told not to. Strip the common cases before parsing."""
@@ -90,10 +101,16 @@ def _parse_vlm_json(raw: str) -> dict:
         if text.lower().startswith("json"):
             text = text[4:]
     text = text.strip()
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end == -1 or end < start:
+    start = text.find("{")
+    if start == -1:
         raise ValueError(f"No JSON object found in VLM response: {raw[:200]!r}")
-    return json.loads(text[start:end + 1])
+    # Decode from the first '{' and let the JSON decoder find its own
+    # matching close brace, instead of text.rfind("}") -- rfind grabs the
+    # LAST '}' in the string, so any trailing prose containing a stray
+    # brace (e.g. a model apologizing "... {if unsure}") silently expands
+    # the slice past the real object and corrupts an otherwise-good parse
+    # into a malformed_json error.
+    return json.JSONDecoder().raw_decode(text[start:])[0]
 
 
 def read_spine(crop_bytes: bytes) -> dict:
@@ -112,14 +129,39 @@ def read_spine(crop_bytes: bytes) -> dict:
         elapsed = time.monotonic() - t0
         logger.info("vlm_call_latency_s=%.2f", elapsed)
 
+    if not isinstance(raw, str):
+        # OpenRouter can legitimately return content: null (e.g. a
+        # finish_reason of "length" with no completion) -- a valid HTTP
+        # 200, not an AIClientError, but not text either. Without this
+        # guard the .strip() inside _parse_vlm_json raises AttributeError,
+        # which escapes read_spine's except clauses below (they only
+        # catch parse errors) and crashes the whole /api/scan/ request.
+        logger.warning("VLM returned non-string content: %r", raw)
+        return {"status": "error", "reason": "malformed_json", "detail": "empty/non-text VLM response"}
+
     try:
         parsed = _parse_vlm_json(raw)
-    except (ValueError, json.JSONDecodeError) as e:
+    except Exception as e:
         logger.warning("VLM returned unparsable JSON: %s", e)
         return {"status": "error", "reason": "malformed_json", "detail": str(e), "raw": raw}
 
-    title = parsed.get("title") or None
-    author = parsed.get("author") or None
+    title = parsed.get("title")
+    author = parsed.get("author")
+    # A VLM answering a multi-spine crop can plausibly return a list
+    # instead of a string (READ_PROMPT itself says "one or more book
+    # spines"); matcher.py's rapidfuzz calls raise TypeError on anything
+    # but a string, which would otherwise escape run_pipeline entirely.
+    if not isinstance(title, str):
+        title = None
+    if not isinstance(author, str):
+        author = None
+    if title is not None and title.strip().lower() in _NULL_TITLE_SENTINELS:
+        title = None
+    if title is not None:
+        title = title.strip()
+    if author is not None:
+        author = author.strip() or None
+
     if not title:
         return {"status": "unreadable", "title": None, "author": author}
 
@@ -134,7 +176,13 @@ def run_pipeline(image_bytes: bytes) -> dict:
     t0 = time.monotonic()
     try:
         regions = detector.detect_regions(image_bytes)
-    except detector.DetectorError as e:
+    except Exception as e:
+        # detector.DetectorError covers the cases detector.py raises
+        # deliberately (missing weights, bad image bytes), but OpenCV
+        # itself can raise cv2.error from a corrupt/partial weights file
+        # or a malformed frame during NMS/encode -- catch broadly here so
+        # a detector-internal failure degrades to the same graceful
+        # "detection_error" response instead of a raw 500.
         logger.error("Detection failed: %s", e)
         return {"books": [], "detection_error": str(e), "regions_found": 0}
 
@@ -177,8 +225,8 @@ def run_pipeline(image_bytes: bytes) -> dict:
             "band": top.band if top else "none",
             "match": {
                 "title": top.entry.title, "author": top.entry.author,
-                "score": round(top.score, 1),
-            } if top else None,
+                "score": top.score,
+            } if top and top.band != "none" else None,
             "candidates": [
                 {"title": c.entry.title, "author": c.entry.author, "score": round(c.score, 1)}
                 for c in candidates
