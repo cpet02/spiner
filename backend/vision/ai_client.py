@@ -44,6 +44,12 @@ def call_vision_model(prompt: str, image_bytes: bytes, mime_type: str = "image/j
             }
         ],
         "max_tokens": max_tokens,
+        # Spine reading is an extraction task, not a creative one -- same
+        # crop should give the same answer every time. Was previously
+        # unset (provider default, non-zero), which is the likely cause
+        # of the same photo producing a different auto-add count run to
+        # run during testing.
+        "temperature": 0,
     }
 
     resp = requests.post(OPENROUTER_URL, headers=_headers(), json=payload, timeout=60)

@@ -57,10 +57,15 @@ READ_PROMPT = (
     "(running top-to-bottom or bottom-to-top along a narrow spine) -- "
     "rotate the image mentally as needed to read it. "
     "Identify the book title and author printed on the spine(s). "
+    "Titles are often two or more words, sometimes on separate lines or "
+    "in different font sizes on the same spine -- read the COMPLETE "
+    "title, not just the first word or line you're confident about. "
     "Respond with ONLY a JSON object, no prose, no markdown fences: "
     '{"title": "<title or null>", "author": "<author or null>"}. '
-    "If you cannot confidently read a title, set title to null -- "
-    "do not guess or invent a plausible-sounding title."
+    "If you cannot confidently read a title at all, set title to null -- "
+    "do not guess or invent a plausible-sounding title. But if you can "
+    "read part of the title confidently, don't truncate it -- include "
+    "every word you can actually read, in order."
 )
 
 # Measured from actual OpenRouter billing during pipeline development/testing:
