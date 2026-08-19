@@ -19,6 +19,11 @@ python manage.py migrate
 python manage.py runserver 0.0.0.0:8000
 ```
 
+`catalog.csv` is loaded once and cached in memory (`vision/pipeline.py`'s
+`_get_catalog()`). Django's autoreloader only watches `.py` files, so
+editing the catalog alone will *not* pick up while the server is
+running -- restart it after any catalog change.
+
 ### Mobile
 
 ```bash
