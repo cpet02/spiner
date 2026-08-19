@@ -31,7 +31,18 @@ export default function App() {
         // Native's native FormData polyfill expects -- that shape silently
         // produces no file part in the multipart body on web, so the
         // backend sees no 'image' field and returns 400 immediately.
-        const blob = await (await fetch(imageAsset.uri)).blob();
+        let blob;
+        try {
+          blob = await (await fetch(imageAsset.uri)).blob();
+        } catch {
+          // A distinct message from the scan-request catch below --
+          // otherwise a revoked blob: URL (can happen if the picker's
+          // internal cleanup runs before this fetch) reads identically
+          // to "server is down", and Retry re-fetches the same dead URI
+          // forever since the underlying picked image is gone, not the
+          // network.
+          throw new Error('Could not read the selected image -- please pick it again.');
+        }
         form.append('image', blob, imageAsset.fileName || 'shelf.jpg');
       } else {
         form.append('image', {
@@ -51,14 +62,24 @@ export default function App() {
         (b) => b.status !== 'ok' || b.band !== 'auto'
       );
 
-      // Auto-confirm the confident matches in the background.
-      for (const b of auto) {
-        postToLibrary(b.match).catch(() => {});
-      }
+      // Await every auto-confirm before showing results -- previously
+      // these were fire-and-forget, so a fast tap straight through to
+      // My Library could load before some writes had landed (RN caps
+      // concurrent connections per host, so a large batch serializes
+      // into waves), and any that failed a 400 silently vanished from
+      // both the count and the library. Only report success as success.
+      const settled = await Promise.allSettled(auto.map((b) => postToLibrary(b.match)));
+      const actuallyAdded = auto.filter((_, i) => settled[i].status === 'fulfilled');
+      const failedToAdd = auto.length - actuallyAdded.length;
 
-      setAutoAdded(auto);
+      setAutoAdded(actuallyAdded);
       setReviewQueue(needsReview.map((b, i) => ({ ...b, _key: `${i}-${Date.now()}` })));
       setScreen('results');
+      if (failedToAdd > 0) {
+        // Don't fail the whole scan over this -- surface it without
+        // blocking the results screen the rest of the scan earned.
+        console.warn(`${failedToAdd} auto-match(es) failed to save to the library.`);
+      }
     } catch (err) {
       setScanError(err.message || 'Network request failed');
       setScreen('results');
@@ -133,12 +154,17 @@ export default function App() {
   return null;
 }
 
-async function postToLibrary({ title, author, score }) {
-  return fetch(`${API_BASE}/library/`, {
+async function postToLibrary({ title, author, score } = {}) {
+  const res = await fetch(`${API_BASE}/library/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, author: author || '', match_score: score }),
   });
+  // fetch only rejects on a network failure -- a 400/500 resolves
+  // normally, so without this check a failed save (e.g. a validation
+  // error) looked identical to a successful one to every caller.
+  if (!res.ok) throw new Error(`Library save failed: ${res.status}`);
+  return res;
 }
 
 function CaptureScreen({ onTakePhoto, onPickImage, onViewLibrary }) {
@@ -259,16 +285,32 @@ const THUMB_SIZE = 90;
 // container and offset by the box's top-left corner.
 function SpineThumbnail({ uri, box }) {
   const [naturalSize, setNaturalSize] = useState(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setNaturalSize(null); // clear stale size from a previous uri before re-measuring
+    setFailed(false);
     Image.getSize(
       uri,
       (w, h) => { if (!cancelled) setNaturalSize({ w, h }); },
-      () => {}
+      () => { if (!cancelled) setFailed(true); }
     );
     return () => { cancelled = true; };
   }, [uri]);
+
+  // getSize can fail on some URI shapes (Android content:// URIs, a
+  // revoked web blob: URL) -- previously this left naturalSize null
+  // forever with no fallback, so the card just showed an empty grey
+  // square with no indication anything went wrong. Fall back to the
+  // full (uncropped) photo, scaled down, rather than nothing.
+  if (failed) {
+    return (
+      <View style={styles.thumbBox}>
+        <Image source={{ uri }} style={{ width: THUMB_SIZE, height: THUMB_SIZE }} resizeMode="cover" />
+      </View>
+    );
+  }
 
   if (!naturalSize || !box) {
     return <View style={[styles.thumbBox, styles.thumbPlaceholder]} />;
