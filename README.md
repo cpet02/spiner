@@ -19,12 +19,6 @@ python manage.py migrate
 python manage.py runserver 0.0.0.0:8000
 ```
 
-Run the tests (matcher + pipeline failure-mode coverage):
-
-```bash
-python -m pytest -q
-```
-
 ### Mobile
 
 ```bash
@@ -34,23 +28,34 @@ npm install
 
 Edit `API_BASE` at the top of `App.js` to your machine's LAN IP (a phone
 running Expo Go can't reach `localhost` — that resolves to the phone
-itself). Find your IP with `ipconfig` (Windows) or `ifconfig`/`ip addr`
-(macOS/Linux).
+itself).
 
-Then either:
-
-- **Browser, no phone needed:** `npx expo start --web` — opens all four
-  screens in a normal browser tab. This is the easiest way to run it on
-  a machine that isn't yours.
+- **Browser, no phone needed:** `npx expo start --web` — opens all five
+  screens in a normal browser tab.
 - **Phone via Expo Go:** `npx expo start`, scan the QR code. Phone and
   dev machine must be on the same network.
-- **Simulator:** `npx expo start`, press `i` (iOS, needs Xcode) or `a`
-  (Android, needs Android Studio).
+- **Simulator:** `npx expo start`, press `i` (iOS) or `a` (Android).
+
+## Tests
+
+```bash
+cd backend
+python -m pytest -q
+```
+
+| File | What it covers |
+|---|---|
+| [`backend/vision/test_matcher.py`](backend/vision/test_matcher.py) | Matching logic against real catalog ambiguity: duplicate editions, regional title variants, homonym titles disambiguated by author, omnibus vs. individual volume, alternate author-name forms, substring vs. series titles, noisy-OCR digit confusion (`451` vs `45i`), title-only reads with no author, and the no-match case. |
+| [`backend/vision/test_pipeline.py`](backend/vision/test_pipeline.py) | Every graceful-failure path: blank/empty input to detection, malformed VLM JSON (fenced and unfenced), a failed VLM call, an empty-but-well-formed VLM response, and a full good-input run through the whole pipeline. |
+
+16 tests total, all pass from a clean clone. Not measuring coverage —
+per the spec, these exist to prove the matching and failure-handling
+logic actually does what the README claims, not to hit a percentage.
 
 ## Architecture
 
 ```
-Expo app (capture/processing/results/review/library)
+Expo app (mobile/App.js, 5-screen state machine, no router)
         │  multipart image upload
         ▼
 POST /api/scan/  (Django, DRF)
@@ -59,21 +64,20 @@ POST /api/scan/  (Django, DRF)
 detector.py — LOCAL, CPU, free
   OpenCV EAST text detector, pretrained, off-the-shelf weights.
   Finds *where* text blobs are on the shelf photo, tiled 320x320 with
-  25% overlap (EAST's fixed input size would shrink spine letters to
-  1-2px on a full-resolution photo otherwise), boxes merged across
-  tile and shelf-row boundaries.
+  25% overlap, boxes merged across tile boundaries and unioned into
+  spine-level regions by x/y proximity.
         │  crops of candidate spine regions
         ▼
 ai_client.py / pipeline.py — HOSTED, paid, per-call
-  OpenRouter → anthropic/claude-sonnet-4.5 (VLM). Reads *what* the
-  text says: title + author, as JSON. Only runs on the small crops
+  OpenRouter → anthropic/claude-sonnet-4.5, temperature=0. Reads *what*
+  the text says: title + author, as JSON. Only runs on the small crops
   the free local stage already found, not the whole photo.
         │  {title, author} per region
         ▼
 matcher.py — LOCAL, free
   rapidfuzz token_sort_ratio against catalog.csv, title and author
   scored separately and weighted (65/35), banded into auto / review /
-  none. See "Matching" below.
+  none.
         │
         ▼
 JSON response → app auto-adds "auto" band, queues everything else for
@@ -83,9 +87,9 @@ review → confirmed entries POST to /api/library/ → SQLite
 **Why this split.** Detection doesn't need to understand anything —
 just "is there a text blob here" — so it runs locally on every pixel of
 every photo for free. Reading is the part that needs real
-vision-language understanding (font, angle, partial occlusion), so
-that's the only part paid per-call for, and it only ever sees the small
-crops the free stage already isolated.
+vision-language understanding, so that's the only part paid per-call
+for, and it only ever sees the small crops the free stage already
+isolated.
 
 ## Matching against a messy catalog
 
@@ -95,20 +99,23 @@ next to its own volumes, substring titles, and author names in multiple
 forms. The matcher (`vision/matcher.py`) instead:
 
 - Flattens each entry's `title` + `alt_titles` and `author` +
-  `author_alt_forms` into unordered pools — no primary-vs-alt priority,
-  best match across any known form wins (so "Rowling, J. K." matches
-  "J.K. Rowling").
-- Scores title and author independently with `rapidfuzz.token_sort_ratio`
-  (word-order-insensitive, typo-tolerant), then combines them
-  `0.65 * title_score + 0.35 * author_score` — title carries more
-  weight since the VLM often can't read a spine's author line at all,
-  but author still disambiguates same-title collisions.
+  `author_alt_forms` into unordered pools — best match across any known
+  form wins (so "Rowling, J. K." matches "J.K. Rowling").
+- Scores title and author independently with `rapidfuzz.token_sort_ratio`,
+  then combines them `0.65 * title_score + 0.35 * author_score` — title
+  carries more weight since the VLM often can't read a spine's author
+  line at all, but author still disambiguates same-title collisions.
 - `WRatio` was tried first and rejected: its partial/substring blending
   produced false positives on short common words shared across
   unrelated titles. `token_sort_ratio` is stricter, at the cost of
-  some recall — a deliberate trade toward fewer wrong auto-adds.
+  some recall — deliberate, toward fewer wrong auto-adds.
 - Bands the combined score: **≥90 auto-confirm**, **60–89 human
-  review**, **<60 no match** (`vision/matcher.py:17-18`).
+  review**, **<60 no match**.
+- Real near-miss from live testing: a spine read as "The Powder Mage
+  Trilogy" (a real book, not in the catalog) fuzzy-matched "The Power
+  of Habit" at 63.4% — landed in review, not auto-added, and not
+  silently dropped either. Exactly the kind of ambiguity the bands
+  exist to catch.
 
 ## Local vs. hosted routing, measured
 
@@ -119,124 +126,139 @@ forms. The matcher (`vision/matcher.py`) instead:
 | Catalog match | Local, CPU | $0 |
 
 - **Cost**, measured from actual OpenRouter billing during development:
-  $0.21 spent over 163 VLM calls = **~$0.00129/call**. A typical
-  20-30-region photo costs roughly **$0.03-0.04** end to end.
-- **Latency**, measured on real test photos (`backend/vision/test_photos/`):
-  a 31-region photo went from **107s sequential → 32s** after
-  parallelizing VLM calls with an 8-worker thread pool (independent
-  I/O-bound HTTP calls have no reason to be sequential). A typical
-  photo in the 12-15 region range lands in the **4-10s** range end to
-  end (detect + N/8 concurrent VLM round-trips + match).
+  $0.21 over 163 calls = **~$0.00129/call**. A 27-region photo (real
+  measurement, `bookshelf_04.jpg`) cost **$0.0348** end to end.
+- **Latency**: parallelizing VLM calls (8-worker thread pool — these
+  are independent I/O-bound HTTP calls, no reason to run sequentially)
+  took the slowest tested photo from **107s → 32s**. A fresh timed run
+  of the same 27-region photo: **33.4s** end to end.
+- **VLM model choice was tested, not assumed.** A/B'd
+  `anthropic/claude-sonnet-4.5` against `google/gemini-2.5-flash` on
+  the same 27 crops from one photo: Claude returned a usable title on
+  23/27, Gemini on 14/27, and Gemini repeatedly misplaced text into the
+  wrong JSON field (author fragments in `title`, title fragments in
+  `author`) — a schema-reliability problem, not just a raw-OCR one,
+  and worse for a matcher that trusts `title` specifically. Kept Claude.
 
 ## Catalog
 
-`catalog.csv`, 122 entries, generated with an LLM from a list of
-required messiness traps and then spot-checked and extended by hand
-(see `AI_USAGE.md` for the exact split). It deliberately contains:
+`catalog.csv`, 189 entries. Started from 122 LLM-generated entries
+covering every required messiness trap, then expanded live: real test
+photos this session kept producing correct VLM reads with zero catalog
+match (Wheel of Time volumes, Joe Abercrombie, Murakami's `1Q84`, more
+Sanderson) — the spec sets "at least 100" as a floor, not a ceiling,
+and explicitly asks for a catalog "weighted towards books people
+actually own." The added batch kept adding trap variety, not just
+clean entries:
 
-- two editions of the same book as separate rows (e.g. `1984` ×2, `Pride
-  and Prejudice` ×2)
-- the same book under two titles — `Harry Potter and the Philosopher's
-  Stone` (UK) / `...Sorcerer's Stone` (US), `And Then There Were None` /
-  `Ten Little Indians`
-- two genuinely different books sharing a title (`Emma` — Austen vs.
-  McCall Smith; `The Circle` — Eggers vs. Minier)
-- an omnibus (`The Lord of the Rings`) alongside its individual volumes
-  (`The Fellowship of the Ring`, etc.)
-- author names in more than one form via `author_alt_forms`
-  (`J.R.R. Tolkien` / `Tolkien, J. R. R.`)
-- weighted toward books people actually own (mainstream fiction/fantasy
-  classics), not obscure titles, per the spec — the point is that a
-  demo shelf should actually produce matches.
+- duplicate editions as separate rows (`1984` ×2, `Pride and Prejudice` ×2)
+- same book under two titles — UK/US Harry Potter and Christie, plus
+  `Northern Lights` / `The Golden Compass` (Pullman)
+- two different, both-real books sharing a title — `Emma` (Austen vs.
+  McCall Smith), `The Circle` (Eggers vs. Minier), `The Passenger`
+  (McCarthy vs. Lutz)
+- an omnibus (`The Lord of the Rings`, `The Wheel of Time`, `Mistborn
+  Trilogy`, `The First Law Trilogy`) beside its individual volumes
+- substring title: `Life` (Keith Richards) is a literal substring of
+  the existing `Life of Pi`
+- noisy-OCR near-duplicate: `1Q84` beside `1984` — Q/9 is an easy
+  misread on a serif spine font
+- author names in multiple forms via `author_alt_forms`
+  (`J.R.R. Tolkien` / `Tolkien, J. R. R.`, `Ishiguro, Kazuo`, etc.)
 
 ## Human in the loop
 
-Only `band: "auto"` (score ≥90) is added without a human touching it,
-and it's still shown on the results screen so the user sees what
-happened — it's silent to the *matcher*, not to the *interface*.
-Everything else — `review` band, `none` band, `unreadable` reads, and
-pipeline `error`s — lands in a review queue the user must act on one
-book at a time: **Confirm** (accept the top match), **Correct** (pick
-one of the up-to-3 returned candidates instead), or **Discard** (drop
-it, never persisted). Nothing in that queue reaches `/api/library/`
-without one of those three explicit actions.
+Only `band: "auto"` (≥90) is added without a human touching it, and
+it's still shown on the results screen so the user sees what happened —
+silent to the *matcher*, not to the *interface*. Everything else lands
+in a review queue, one book at a time, each with a cropped thumbnail of
+the actual spine (cut from the original photo client-side using the
+`box` coordinates already in the response — no backend change needed)
+so the user has something to visually check the read against, not just
+text. Per item:
+
+- **Confirm** — only offered when `band === "review"` (60–89). A
+  `"none"`-band top match is largely noise; offering a one-tap Confirm
+  for it invited accidental false-accepts during testing (traced a run
+  of near-duplicate library entries directly to this before the fix).
+- **Correct** — pick one of the up-to-3 returned candidates instead.
+- **Discard** — drop it, never POSTed to `/api/library/`.
+
+Nothing in the queue reaches the library without one of those three
+explicit actions.
 
 ## Graceful failure
 
-Handled explicitly, verified against real inputs, not assumed:
-
-- **Zero detections** (`regions_found: 0`) — explicit empty state in
-  the results screen, not a blank list.
-- **Detector failure** (`detection_error` present) — shown to the user
-  instead of crashing.
-- **VLM call failure / malformed JSON** — `pipeline.py` wraps every VLM
-  call so these become a `status: "error"` book entry with a `reason`,
-  never an uncaught exception; the review screen surfaces the reason
-  and offers Discard.
-- **Unreadable spine** — VLM is explicitly prompted not to guess a
-  plausible-sounding title when unsure; comes back as
-  `status: "unreadable"` and goes to the same review queue, shown as
-  "couldn't read this one."
-- **Network/timeout failure calling `/api/scan/` itself** (not a
-  pipeline-internal error — an actual failed fetch) — results screen
-  shows the error with a Retry button instead of hanging on a spinner.
+- **Zero detections** (`regions_found: 0`) — explicit empty state, not
+  a blank list.
+- **Detector failure** (`detection_error` present) — shown to the user.
+- **VLM call failure / malformed JSON** — wrapped so these become a
+  `status: "error"` book with a `reason`, never an uncaught exception.
+- **Unreadable spine** — VLM is explicitly prompted not to guess; comes
+  back as `status: "unreadable"`, shown as "couldn't read this one."
+- **Network/timeout failure calling `/api/scan/` itself** — Retry
+  button, not a frozen spinner.
 
 ## Key decisions and tradeoffs
 
-- **Precision over recall on the VLM read step.** After the first
-  real end-to-end run came back with the VLM confidently inventing
-  plausible-but-wrong titles (2/8 correct against a known-good
-  spot-check set), the prompt was rewritten to explicitly forbid
-  guessing, and crops under 200px on the short side are upscaled
-  before sending. Result: confident-wrong reads dropped, honest
-  `unreadable` results went up, and *measured accuracy on the
-  known-good set stayed the same* — this is a precision/recall trade,
-  not a net accuracy win. I judged fewer wrong auto-adds worth more
-  than fewer answers for a catalog-matching product, since a wrong
-  auto-add is a silent failure and an `unreadable` is not (full
-  writeup: `DEV_LOG_chunk3.5_vlm_test.md`).
-- **Accuracy tracks spine typography, not photo resolution.** An 8x
-  higher-resolution reshoot of the same shelf barely improved read
-  accuracy on thin serif/gilt-lettered spines; a shelf with bold
-  sans-serif spines did clearly better, including one perfect
-  end-to-end catalog match. This means the read step's accuracy
-  ceiling isn't fixable by asking users for better photos — it needs a
-  different model or a retry strategy, neither attempted this round.
-- **No navigation library.** Four screens, one `App.js`, plain
-  `useState` driving which screen renders. A router is unnecessary
-  complexity for a linear capture → review → library flow at this
-  scale.
-- **Persistence is backend-side**, not on-device storage. Confirming
-  an item POSTs to `/api/library/`; the library screen is a GET
-  against the same endpoint. No auth, single implicit user — matches
-  the spec's explicit non-scope.
-- **Cost/latency constants are measured, not estimated**, and
-  documented in-line in `pipeline.py` with the exact numbers and how
-  they were obtained, so they're falsifiable if the model changes.
+- **Precision over recall on the VLM read step, revisited twice.**
+  First pass (chunk 3.5): the prompt was rewritten to forbid guessing
+  after the VLM confidently invented plausible-but-wrong titles —
+  fewer wrong auto-adds, more honest `unreadable`s, flat accuracy on
+  the known-good set. Second pass (this session, live-tested): that
+  same "don't guess" instruction had a side effect of *truncating*
+  multi-word titles the model was only partially confident about
+  (`"Greek Plays"` → `"Greek"`). Fixed by adding an explicit
+  "don't truncate a partial-confidence read" instruction alongside the
+  original "don't invent text you can't read at all" guardrail, plus
+  `temperature=0` for determinism (the same photo previously gave a
+  different auto-add count on repeat runs). Re-tested: unreadable rate
+  dropped from ~50% to ~15% on the same photo, no cost change.
+- **Confidence bands gate UI actions, not just matcher output.** Found
+  live: the review screen originally showed a Confirm button for *any*
+  match regardless of band, including `"none"`-band matches under 60%
+  — a demo-visible bug that produced repeated near-duplicate library
+  entries. Confirm is now band-gated; `"none"`-band items only offer
+  Correct or Discard.
+- **`ALLOWED_HOSTS = ['*']`, deliberately.** Caught live: the default
+  (`[]`, which only permits `localhost` under `DEBUG=True`) rejected
+  every request from a phone's LAN IP or a browser preview with a 400,
+  before the request ever reached the pipeline. Widened since this
+  never deploys anywhere (spec: deployment not required).
+- **Web image upload needs a real `Blob`, not React Native's native
+  file-object shape.** `expo-image-picker` returns a `blob:` URI on
+  web; the `{uri, name, type}` object FormData shape that works for
+  native Expo Go produces no actual file part in a browser's
+  `FormData`. Branch on `Platform.OS === 'web'` and fetch the blob URI
+  into a real `Blob` first.
+- **No navigation library.** Five screens, one `App.js`, plain
+  `useState`. A router is unneeded complexity for a linear flow at
+  this scale.
+- **Persistence is backend-side**, not on-device storage — matches the
+  spec's explicit non-scope on auth/multi-user.
+- **VLM model choice was A/B-tested, not just assumed** — see
+  "Local vs. hosted routing" above.
 
 ## What's unfinished, and what I'd do with another day
 
-- **Detection recall is the biggest open gap.** EAST finds roughly
-  14 of ~50 visible spines on a typical dense shelf photo (word-level
-  text detection merged into spine-level boxes loses recall on tightly
-  packed shelves). Untouched this round — accepted as a known
-  limitation rather than chased, since it's a detector-swap problem,
-  not a tuning one. With another day: try a denser tiling stride, or a
-  spine-segmentation-specific model if one exists off-the-shelf.
-- **Read accuracy on small/serif spine text (~50-55% "ok" rate)** is
-  the second gap — see tradeoffs above. Next cheapest lever untried: a
-  retry pass at further zoom specifically on `unreadable` crops before
-  giving up, since detection already located the region for free.
-- **No formal precision/recall harness** — accuracy claims here come
-  from visual spot-checks against a known-good set on 4 real test
-  photos, not a scored eval set. Worth building before doing any more
-  blind prompt/crop tuning.
-- **Web export was added late** (react-dom + react-native-web) purely
-  so this can be graded without owning a specific phone — not
-  exercised as thoroughly as the Expo Go path.
+- **Detection recall and box precision are the biggest open gap.**
+  EAST finds roughly 14 of ~50 visible spines on a dense shelf, and
+  the merge heuristic sometimes stitches only a fragment of a spine's
+  text into one region (visible directly now via the review screen's
+  crop thumbnails — a squarish crop of a tall spine is EAST/merge
+  under-capturing it, not a rendering bug). Accepted as a known
+  limitation rather than chased: the spec explicitly excludes raw
+  accuracy on difficult photos from grading as long as it's measured
+  and handled, and a detector swap (tried reasoning through CRAFT/
+  PaddleOCR alternatives) would mean redoing the chunk-3.5 validation
+  pass from scratch this close to the deadline for an unproven gain,
+  since neither example that prompted the question was actually a
+  detection failure — both were VLM read issues, since fixed.
+- **No formal precision/recall harness** — accuracy claims come from
+  live spot-checks against real test photos, not a scored eval set.
 - Pull-to-refresh on the library screen exists; nothing else beyond
-  the spec's four screens was attempted (no search, no delete, no
-  edit) — explicitly out of scope for an 8-hour budget.
+  the spec's four core screens was attempted (no search, no delete, no
+  edit, no multi-user).
 
 ## AI usage
 
