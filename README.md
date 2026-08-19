@@ -239,26 +239,58 @@ explicit actions.
 - **VLM model choice was A/B-tested, not just assumed** — see
   "Local vs. hosted routing" above.
 
+## Scope cuts
+
+Deliberate, not accidental — each one traded against the ~8-hour budget:
+
+- **No auth, no multi-user.** Single implicit user, backend-persisted
+  library. Spec explicitly excludes auth from grading; building it
+  would've bought nothing toward the four things actually being checked.
+- **No free-text catalog search for corrections.** The review screen's
+  Correct action only offers the matcher's own top-3 candidates, not a
+  search box. A free-text search is a second, unrelated matching UI —
+  the candidates list already demonstrates the fuzzy-matching logic
+  the spec asks for; a search box would duplicate that without adding
+  signal.
+- **No navigation library.** Five screens, one `useState` state
+  machine. A router earns its cost on branching or deep-linked flows;
+  this is one linear path, so `react-navigation` would be pure overhead.
+- **Left the EAST detector untouched despite a known box-precision
+  issue**, found live during testing. Fixing it meant redoing the
+  chunk-3.5 validation pass from scratch on deadline day for an
+  unproven gain — and the spec explicitly doesn't grade raw accuracy
+  as long as it's measured and handled, which it is. Documented instead
+  of chased (see "What's unfinished" below).
+- **No formal precision/recall harness.** Accuracy claims are grounded
+  in real spot-checks against real test photos (not vibes), but not a
+  scored eval set — building one is real engineering time that doesn't
+  change any of the four things being checked.
+- **No automatic retry on network failure**, manual Retry button only.
+  Automatic retry/backoff is a reliability feature for a service under
+  real traffic; this runs on one dev machine for one demo.
+- **Deployment not attempted** — explicitly out of scope per spec
+  ("we must be able to run it on our own machine by following your
+  README").
+
 ## What's unfinished, and what I'd do with another day
 
-- **Detection recall and box precision are the biggest open gap.**
-  EAST finds roughly 14 of ~50 visible spines on a dense shelf, and
-  the merge heuristic sometimes stitches only a fragment of a spine's
-  text into one region (visible directly now via the review screen's
-  crop thumbnails — a squarish crop of a tall spine is EAST/merge
-  under-capturing it, not a rendering bug). Accepted as a known
-  limitation rather than chased: the spec explicitly excludes raw
-  accuracy on difficult photos from grading as long as it's measured
-  and handled, and a detector swap (tried reasoning through CRAFT/
-  PaddleOCR alternatives) would mean redoing the chunk-3.5 validation
-  pass from scratch this close to the deadline for an unproven gain,
-  since neither example that prompted the question was actually a
-  detection failure — both were VLM read issues, since fixed.
-- **No formal precision/recall harness** — accuracy claims come from
-  live spot-checks against real test photos, not a scored eval set.
-- Pull-to-refresh on the library screen exists; nothing else beyond
-  the spec's four core screens was attempted (no search, no delete, no
-  edit, no multi-user).
+The single biggest open gap is **detection recall and box precision**:
+EAST finds roughly 14 of ~50 visible spines on a dense shelf, and the
+merge heuristic sometimes stitches only a fragment of a spine's text
+into one region — visible directly now via the review screen's crop
+thumbnails (see "Scope cuts" above for why this was documented rather
+than chased). With another day, in cheapest-first order:
+
+1. Retry pass on `unreadable` crops at further zoom before giving up —
+   detection already found the region, so this is a few extra VLM
+   calls, not new detector work.
+2. A real precision/recall harness against a labeled photo set, to
+   replace live spot-checks with numbers that survive scrutiny.
+3. Loosen the merge heuristic's y-gap tolerance to catch more
+   full-spine regions, re-validated against the existing test photos
+   before trusting it.
+4. A different local detector (CRAFT, PaddleOCR's DB) if (1)-(3) hit a
+   ceiling — the biggest lever, also the most expensive to validate.
 
 ## AI usage
 
