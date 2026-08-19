@@ -119,6 +119,7 @@ export default function App() {
     return (
       <ReviewScreen
         queue={reviewQueue}
+        sourceImage={lastImage}
         onResolve={resolveReviewItem}
         onDone={() => setScreen('results')}
       />
@@ -250,7 +251,55 @@ function ResultsScreen({
   );
 }
 
-function ReviewScreen({ queue, onResolve, onDone }) {
+const THUMB_SIZE = 90;
+
+// Crops a region of the full shelf photo down to a thumbnail using the
+// [x1,y1,x2,y2] pixel box the backend already returns per book -- no
+// backend change needed, just an oversized Image clipped to a fixed-size
+// container and offset by the box's top-left corner.
+function SpineThumbnail({ uri, box }) {
+  const [naturalSize, setNaturalSize] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Image.getSize(
+      uri,
+      (w, h) => { if (!cancelled) setNaturalSize({ w, h }); },
+      () => {}
+    );
+    return () => { cancelled = true; };
+  }, [uri]);
+
+  if (!naturalSize || !box) {
+    return <View style={[styles.thumbBox, styles.thumbPlaceholder]} />;
+  }
+
+  const [x1, y1, x2, y2] = box;
+  const boxW = Math.max(x2 - x1, 1);
+  const boxH = Math.max(y2 - y1, 1);
+  const scale = Math.min(THUMB_SIZE / boxW, THUMB_SIZE / boxH);
+
+  return (
+    <View style={styles.thumbBox}>
+      <Image
+        source={{ uri }}
+        style={{
+          width: naturalSize.w * scale,
+          height: naturalSize.h * scale,
+          marginLeft: -x1 * scale,
+          marginTop: -y1 * scale,
+        }}
+      />
+    </View>
+  );
+}
+
+const BAND_LABELS = {
+  review: { text: 'Possible match — please confirm', color: '#b8860b' },
+  none: { text: 'Low confidence — pick a candidate or discard', color: '#a33' },
+};
+
+function ReviewScreen({ queue, sourceImage, onResolve, onDone }) {
   const handleConfirm = async (item) => {
     if (item.match) {
       await postToLibrary(item.match).catch(() => {});
@@ -283,53 +332,74 @@ function ReviewScreen({ queue, onResolve, onDone }) {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>Review ({queue.length})</Text>
-        {queue.map((item) => (
-          <View key={item._key} style={styles.card}>
-            {item.status === 'error' && (
-              <Text style={styles.cardHeading}>Couldn't process this one</Text>
-            )}
-            {item.status === 'unreadable' && (
-              <Text style={styles.cardHeading}>Couldn't read this one</Text>
-            )}
-            {item.status === 'ok' && (
-              <Text style={styles.cardHeading}>
-                {item.detected_title}
-                {item.detected_author ? ` — ${item.detected_author}` : ''}
-              </Text>
-            )}
-            {item.status === 'error' && (
-              <Text style={styles.cardLine}>Reason: {item.reason}</Text>
-            )}
+        {queue.map((item) => {
+          const bandInfo = BAND_LABELS[item.band];
+          // Only a "review"-band match (60-89%) is confident enough to
+          // offer a one-tap Confirm. A "none"-band top match is little
+          // more than noise -- surfacing it as confirmable invites
+          // accidentally accepting a wrong book, so those only get
+          // Correct (pick a candidate) or Discard.
+          const canConfirm = item.match && item.band === 'review';
 
-            {item.match && (
-              <Text style={styles.cardLine}>
-                Top match: {item.match.title} ({item.match.score}%)
-              </Text>
-            )}
-
-            {item.candidates && item.candidates.length > 0 && (
-              <View style={{ marginTop: 8 }}>
-                <Text style={styles.cardLine}>Candidates:</Text>
-                {item.candidates.map((c, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => handleCorrect(item, c)}
-                    style={styles.candidateRow}
-                  >
-                    <Text style={styles.link}>
-                      {c.title} {c.author ? `— ${c.author}` : ''} ({c.score}%)
+          return (
+            <View key={item._key} style={styles.card}>
+              <View style={styles.cardRow}>
+                {sourceImage && item.box && (
+                  <SpineThumbnail uri={sourceImage.uri} box={item.box} />
+                )}
+                <View style={styles.cardTextCol}>
+                  {item.status === 'error' && (
+                    <Text style={styles.cardHeading}>Couldn't process this one</Text>
+                  )}
+                  {item.status === 'unreadable' && (
+                    <Text style={styles.cardHeading}>Couldn't read this one</Text>
+                  )}
+                  {item.status === 'ok' && (
+                    <Text style={styles.cardHeading}>
+                      {item.detected_title}
+                      {item.detected_author ? ` — ${item.detected_author}` : ''}
                     </Text>
-                  </TouchableOpacity>
-                ))}
+                  )}
+                  {item.status === 'error' && (
+                    <Text style={styles.cardLine}>Reason: {item.reason}</Text>
+                  )}
+                  {bandInfo && (
+                    <Text style={[styles.cardLine, { color: bandInfo.color, fontWeight: '600' }]}>
+                      {bandInfo.text}
+                    </Text>
+                  )}
+                  {item.match && (
+                    <Text style={styles.cardLine}>
+                      Top match: {item.match.title} ({item.match.score}%)
+                    </Text>
+                  )}
+                </View>
               </View>
-            )}
 
-            <View style={styles.buttonGroup}>
-              {item.match && <Button title="Confirm" onPress={() => handleConfirm(item)} />}
-              <Button title="Discard" color="#a33" onPress={() => handleDiscard(item)} />
+              {item.candidates && item.candidates.length > 0 && (
+                <View style={{ marginTop: 8 }}>
+                  <Text style={styles.cardLine}>Candidates:</Text>
+                  {item.candidates.map((c, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      onPress={() => handleCorrect(item, c)}
+                      style={styles.candidateRow}
+                    >
+                      <Text style={styles.link}>
+                        {c.title} {c.author ? `— ${c.author}` : ''} ({c.score}%)
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.buttonGroup}>
+                {canConfirm && <Button title="Confirm" onPress={() => handleConfirm(item)} />}
+                <Button title="Discard" color="#a33" onPress={() => handleDiscard(item)} />
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
         <Button title="Back to Results" onPress={onDone} />
       </ScrollView>
     </SafeAreaView>
@@ -413,4 +483,11 @@ const styles = StyleSheet.create({
   cardHeading: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
   cardLine: { fontSize: 14, color: '#333', marginBottom: 2 },
   candidateRow: { paddingVertical: 4 },
+  cardRow: { flexDirection: 'row', gap: 12 },
+  cardTextCol: { flex: 1 },
+  thumbBox: {
+    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 6,
+    overflow: 'hidden', backgroundColor: '#eee',
+  },
+  thumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
 });
