@@ -12,7 +12,7 @@ Design:
 """
 import csv
 from dataclasses import dataclass
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, utils
 
 AUTO_THRESHOLD = 90
 REVIEW_THRESHOLD = 60
@@ -67,7 +67,16 @@ def load_catalog(path: str) -> list:
 def _max_sim(query: str, pool: list) -> float:
     if not query or not pool:
         return 0.0
-    return max(fuzz.token_sort_ratio(query, form) for form in pool)
+    # default_process lowercases + strips punctuation before comparing --
+    # without it, an ALL-CAPS spine read (extremely common on real book
+    # spines) scores catastrophically low against a mixed-case catalog
+    # entry purely on character case, not actual title similarity. Found
+    # live: "THE LORD OF THE RINGS" scored 28.6% against the catalog's
+    # "The Lord of the Rings" -- an exact match, band "none".
+    return max(
+        fuzz.token_sort_ratio(query, form, processor=utils.default_process)
+        for form in pool
+    )
 
 
 def score_entry(title_guess: str, author_guess: str, entry: CatalogEntry):
