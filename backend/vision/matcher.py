@@ -20,6 +20,14 @@ REVIEW_THRESHOLD = 60
 TITLE_WEIGHT = 0.65
 AUTHOR_WEIGHT = 0.35
 
+# If the top two candidates are within this many points of each other and
+# no author was read to break the tie, the "auto" match is a coin flip
+# between two real catalog entries (e.g. "Emma" -> Austen vs. McCall
+# Smith), not a confident match -- demoted to "review" instead. Found
+# live: with no author, every one of these ties scored a full 100.0 and
+# auto-confirmed an arbitrary (lowest-id) entry.
+TIE_MARGIN = 5.0
+
 
 @dataclass
 class CatalogEntry:
@@ -81,21 +89,51 @@ def _max_sim(query: str, pool: list) -> float:
 
 def score_entry(title_guess: str, author_guess: str, entry: CatalogEntry):
     t_score = _max_sim(title_guess, entry.title_pool)
-    a_score = _max_sim(author_guess, entry.author_pool) if author_guess else t_score
-    combined = t_score * TITLE_WEIGHT + a_score * AUTHOR_WEIGHT
+    author_guess = (author_guess or "").strip()
+    if author_guess:
+        a_score = _max_sim(author_guess, entry.author_pool)
+        combined = t_score * TITLE_WEIGHT + a_score * AUTHOR_WEIGHT
+    else:
+        # No author to score -- combined collapses to the title score
+        # alone. Previously this reused t_score AS a_score too, which
+        # made the 65/35 weighting a no-op and meant a missing author
+        # cost nothing while a correct-but-abbreviated one (e.g.
+        # "Martin" vs. "George R.R. Martin") could cost 15+ points and
+        # get demoted to review. a_score is now honestly 0 -- it wasn't
+        # scored, not scored-and-perfect.
+        a_score = 0.0
+        combined = t_score
     return combined, t_score, a_score
 
 
+def _band_for(score: float) -> str:
+    if score >= AUTO_THRESHOLD:
+        return "auto"
+    if score >= REVIEW_THRESHOLD:
+        return "review"
+    return "none"
+
+
 def match(title_guess: str, author_guess: str, catalog: list, top_n: int = 3) -> list:
-    scored = []
-    for entry in catalog:
-        combined, t_score, a_score = score_entry(title_guess, author_guess, entry)
-        if combined >= AUTO_THRESHOLD:
-            band = "auto"
-        elif combined >= REVIEW_THRESHOLD:
-            band = "review"
-        else:
-            band = "none"
-        scored.append(MatchResult(entry, combined, t_score, a_score, band))
-    scored.sort(key=lambda r: r.score, reverse=True)
-    return scored[:top_n]
+    # Round before banding, not after -- otherwise a combined score of
+    # 89.96 bands "review" but displays as "90.0%" once pipeline.py
+    # rounds it for the API response, which reads as a boundary bug to
+    # anyone checking the number against the band.
+    scored = [
+        (entry, round(score, 1), t, a)
+        for entry, (score, t, a) in (
+            (entry, score_entry(title_guess, author_guess, entry)) for entry in catalog
+        )
+    ]
+    scored.sort(key=lambda r: r[1], reverse=True)
+
+    author_provided = bool((author_guess or "").strip())
+    results = []
+    for i, (entry, combined, t_score, a_score) in enumerate(scored[:top_n]):
+        band = _band_for(combined)
+        if band == "auto" and not author_provided and i == 0 and len(scored) > 1:
+            runner_up = scored[1][1]
+            if combined - runner_up < TIE_MARGIN:
+                band = "review"
+        results.append(MatchResult(entry, combined, t_score, a_score, band))
+    return results
