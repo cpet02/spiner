@@ -18,6 +18,7 @@ user can retry, same as a low-confidence match.
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 import time
 
 try:  # package import (Django runtime: `from vision import pipeline`)
@@ -52,10 +53,14 @@ def _get_catalog():
 
 READ_PROMPT = (
     "This image is a cropped photo of one or more book spines. "
+    "The text may be printed horizontally, or rotated 90 degrees "
+    "(running top-to-bottom or bottom-to-top along a narrow spine) -- "
+    "rotate the image mentally as needed to read it. "
     "Identify the book title and author printed on the spine(s). "
     "Respond with ONLY a JSON object, no prose, no markdown fences: "
     '{"title": "<title or null>", "author": "<author or null>"}. '
-    "If you cannot confidently read a title, set title to null."
+    "If you cannot confidently read a title, set title to null -- "
+    "do not guess or invent a plausible-sounding title."
 )
 
 # Rough per-1K-token pricing for a mid-tier hosted VLM via OpenRouter, used
@@ -63,6 +68,12 @@ READ_PROMPT = (
 # constant here (not fetched live) -- see README for the exact model/rate
 # used at measurement time.
 EST_COST_PER_CALL_USD = 0.003
+
+# VLM calls are one blocking HTTP request each; the reads are independent of
+# each other, so we fire them concurrently instead of one-at-a-time. This is
+# the single biggest lever on wall-clock latency per photo -- worth far more
+# than any per-call optimization.
+MAX_CONCURRENT_VLM_CALLS = 8
 
 
 def _parse_vlm_json(raw: str) -> dict:
@@ -125,11 +136,12 @@ def run_pipeline(image_bytes: bytes) -> dict:
     if not regions:
         return {"books": [], "regions_found": 0}
 
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_VLM_CALLS) as pool:
+        reads = list(pool.map(lambda r: read_spine(r["crop"]), regions))
+
     books = []
     vlm_calls = 0
-    for region in regions:
-        read = read_spine(region["crop"])
-
+    for region, read in zip(regions, reads):
         if read["status"] == "error":
             books.append({
                 "status": "error",

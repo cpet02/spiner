@@ -104,6 +104,21 @@ def _run_east_on_tile(net, tile):
     return _decode_predictions(scores, geometry)
 
 
+# Spine crops are often only a few dozen px on a side, well below what a
+# hosted VLM's OCR needs to read tiny print reliably. Upscale short-side to
+# this floor (bicubic) before sending -- cheap, no extra detection needed.
+MIN_CROP_SIDE = 200
+
+
+def _upscale_for_vlm(crop):
+    h, w = crop.shape[:2]
+    short_side = min(h, w)
+    if short_side >= MIN_CROP_SIDE or short_side == 0:
+        return crop
+    scale = MIN_CROP_SIDE / short_side
+    return cv2.resize(crop, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
+
+
 def detect_regions(image_bytes: bytes, pad_frac: float = 0.15):
     """Detect candidate text regions in a shelf photo.
 
@@ -166,6 +181,7 @@ def detect_regions(image_bytes: bytes, pad_frac: float = 0.15):
         if x2 <= x1 or y2 <= y1:
             continue
         crop = img[y1:y2, x1:x2]
+        crop = _upscale_for_vlm(crop)
         ok, enc = cv2.imencode(".jpg", crop)
         if not ok:
             continue
