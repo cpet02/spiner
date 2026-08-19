@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
   StyleSheet, Text, View, Button, Image, ScrollView,
-  ActivityIndicator, TouchableOpacity, RefreshControl, SafeAreaView,
+  ActivityIndicator, TouchableOpacity, RefreshControl, SafeAreaView, Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -25,11 +25,21 @@ export default function App() {
     setScanError(null);
     try {
       const form = new FormData();
-      form.append('image', {
-        uri: imageAsset.uri,
-        name: imageAsset.fileName || 'shelf.jpg',
-        type: imageAsset.mimeType || 'image/jpeg',
-      });
+      if (Platform.OS === 'web') {
+        // On web, ImagePicker returns a blob: URI. FormData needs a real
+        // Blob/File appended, not the {uri, name, type} object React
+        // Native's native FormData polyfill expects -- that shape silently
+        // produces no file part in the multipart body on web, so the
+        // backend sees no 'image' field and returns 400 immediately.
+        const blob = await (await fetch(imageAsset.uri)).blob();
+        form.append('image', blob, imageAsset.fileName || 'shelf.jpg');
+      } else {
+        form.append('image', {
+          uri: imageAsset.uri,
+          name: imageAsset.fileName || 'shelf.jpg',
+          type: imageAsset.mimeType || 'image/jpeg',
+        });
+      }
       const res = await fetch(`${API_BASE}/scan/`, { method: 'POST', body: form });
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const data = await res.json();
