@@ -5,107 +5,50 @@ scaffolding. Honest breakdown of where and how.
 
 ## How Claude was used
 
-- **No-thinking / low-effort mode** for mechanical coding: scaffolding
-  (Django, Expo, OpenRouter client), boilerplate CRUD, wiring endpoints,
-  writing tests once the shape of a fix was decided.
-- **Extended thinking** for decisions with real downstream consequences:
-  the confidence-scoring formula for catalog matching, the local-vs-hosted
-  compute split, and debugging subtle pipeline bugs (see below). These are
-  the calls that could cascade into hard-to-defend architecture if gotten
-  wrong, so more reasoning budget went here deliberately.
-- Progress was checked against the take-home spec at intervals rather than
-  letting Claude run unsupervised for hours — see commit history for the
-  resulting checkpoints.
+- **Low-effort mode** for mechanical coding: scaffolding, boilerplate CRUD,
+  endpoint wiring, tests once a fix's shape was already decided.
+- **Extended thinking** for decisions with real consequences: the matching
+  formula, the local-vs-hosted split, subtle pipeline bugs.
+- Progress checked against the spec at intervals, not left to run
+  unsupervised — see commit history for the checkpoints.
 
 ## Specific contributions worth naming
 
-- **Catalog generation**: Claude drafted the initial `catalog.csv` column
-  structure and entries from a description of the required messiness
-  traps (duplicate editions, US/UK title variants, homonym titles,
-  omnibus vs. individual volumes, substring titles, author name-format
-  variants). I own the catalog's content and correctness — spot-checked
-  entries and added edge cases (noisy-OCR digit confusion, title-only/no-author
-  cases) beyond what was generated, listed in the dev log.
-- **Matcher design discussion**: Claude and I evaluated `rapidfuzz`
-  scoring functions together. `WRatio` was tried first and rejected —
-  its partial/substring blending produced false positives on short common
-  words ("book", "great") shared across unrelated titles. Switched to
-  `token_sort_ratio`, which is stricter and normalizes word order, at the
-  cost of some recall. This was a joint decision, not a delegated one —
-  I ran both against the catalog's edge cases before choosing.
-- **EAST detector bug**: Claude helped diagnose that EAST was squeezing
-  the whole input image into one 320x320 tile rather than tiling the
-  original resolution into multiple 320x320 chunks, which was silently
-  destroying detection accuracy on any non-square photo. Fix (tile the
-  source image, run detection per tile, merge overlapping boxes) was
-  Claude-authored, verified by me against real test photos.
-- **VLM prompt engineering**: the rotation-aware, upscaled-crop,
-  no-guessing prompt in `pipeline.py` (`READ_PROMPT`) went through several
-  iterations against real OpenRouter calls on real bookshelf photos —
-  Claude drafted revisions, I evaluated them against the known-good
-  spot-check set and decided which to keep.
-- **Backend endpoint wiring** (`vision/views.py`, `vision/urls.py`):
-  mechanical — Claude wrote it, I reviewed the diff and smoke-tested the
-  live endpoint against a real photo before accepting it.
-- **Mobile UI** (`mobile/App.js`, all five screens): Claude-authored from
-  a detailed brief (screen flow, band-gating rules, graceful-failure
-  cases). I drove live testing against the real backend afterward,
-  which is what actually found the bugs below — the code compiling and
-  the app looking right were not treated as "working."
-- **Bugs found only by running the app, not by review**: `ALLOWED_HOSTS`
-  rejecting every non-localhost request (400 on first real device/browser
-  test), the web image-upload FormData shape being wrong for
-  `expo-image-picker`'s `blob:` URIs on web (immediate 400, before the
-  pipeline ever ran), and the review screen offering a one-tap Confirm
-  for `"none"`-band (near-noise) matches, which I traced directly to a
-  run of duplicate library entries during my own testing. Claude
-  diagnosed and fixed each once I reported the symptom; I verified each
-  fix against the live app/API before accepting it, not just the diff.
-- **VLM read-quality tuning, round 2**: I flagged specific bad reads
-  from real photos ("Greek Plays" → "Greek", a clearly-legible spine
-  marked unreadable). Claude's read: the "don't guess" prompt from the
-  first round was suppressing partial-confidence words, not just
-  invented ones. I asked for the model-swap question directly rather
-  than assuming a fix — Claude ran a real A/B (`claude-sonnet-4.5` vs.
-  `gemini-2.5-flash`) against the same 27 crops before recommending
-  keeping the current model, with numbers, not a guess.
-- **Catalog expansion**: I decided the catalog needed to grow after
-  seeing real test-photo reads with no match; Claude drafted the new
-  entries (real titles, plausible ISBNs) and wove in additional
-  messiness traps per my instruction to match the original batch's
-  intent, not just add clean titles.
-- **Matcher case-sensitivity bug**: found by Claude testing new close-up
-  photos I supplied, not by me reporting a symptom — a spine read as
-  ALL CAPS was scoring near-zero against a correctly-cased catalog
-  entry. I asked for the fix, verified it against the same photos
-  myself before accepting.
-- **Deep correctness audit**: I asked directly whether a fresh,
-  high-effort review pass could find more bugs like the case-
-  sensitivity one, given I had budget left. Claude ran 5 parallel
-  full-file audits (detector.py, matcher.py, pipeline.py + ai_client.py,
-  views.py/models.py/serializers.py, mobile/App.js) rather than one
-  shallow pass. I did not accept the findings on faith: for the
-  highest-impact one (an OpenCV API misuse in NMS that was silently
-  dropping real detections), I had Claude construct and run a direct
-  numeric repro before touching any code, since "an agent said so" is
-  not the same as verified. Every fix was re-tested (unit tests +
-  a live scan against the real backend) before I considered it done.
+The columns below split three things that are easy to blur together:
+**Idea** (whose call was it), **Code** (who typed it), and **Verified**
+(who confirmed it actually worked, and how). I wrote almost none of the
+code directly — but I did not accept any of it on faith either. Every
+row's Verified column is something I did myself, against the real app
+or a real photo, not just a passing test or a clean diff.
+
+| What | Idea | Code | Verified |
+|---|---|---|---|
+| `catalog.csv` structure & entries | Claude, from my trap description | Claude | Me — spot-checked entries, added edge cases beyond what was generated |
+| Matcher scoring (`token_sort_ratio` over `WRatio`) | Joint — evaluated together | Claude | Me — ran both scorers against the catalog's edge cases myself |
+| EAST tiling bug (whole photo squeezed into one 320x320 tile) | Claude diagnosed | Claude | Me — against real test photos |
+| `READ_PROMPT` iterations | Claude drafted revisions | Claude | Me — against the known-good spot-check set, I decided what to keep |
+| Backend wiring (`views.py`, `urls.py`) | Claude | Claude | Me — reviewed diff, smoke-tested the live endpoint |
+| Mobile UI (`App.js`) | Claude, from my detailed brief | Claude | Me — live testing against the real backend, which is what found the bugs below |
+| `ALLOWED_HOSTS`, web FormData shape, band-gated Confirm bugs | Me — reported each symptom | Claude | Me — verified each live |
+| VLM truncation fix + model A/B | Me — flagged bad reads, asked for the model-swap question directly | Claude | Me — against the spot-check set |
+| Catalog expansion | Me — decided it needed to grow | Claude | Me |
+| Matcher case-sensitivity bug | Claude — found testing photos I supplied | Claude | Me — against the same photos |
+| Deep correctness audit (5 parallel file reviews, NMS bug) | Me — asked directly for a fresh pass | Claude | Me — required a numeric repro before any fix, re-tested every fix after |
+| Final defense-readiness cleanup (dead code, unwired `isbn`, stale docstring, inert `MAILERS` setting, unused `expo-status-bar` dep) | Me — asked Claude to find anything I couldn't justify live | Claude | Me — reviewed each, understand why each existed and why it's gone |
 
 ## What I did not delegate
 
 - Whether a design choice was acceptable for the task's grading criteria
-  (e.g., accepting the precision/recall trade-off in the VLM prompt
-  rather than chasing a marginal accuracy gain — see README/dev log).
-- Reading and judging the actual VLM outputs against known-good values —
-  every accuracy claim in this repo is checked against a real photo, not
-  assumed correct because the code ran without error.
-- The decision to measure real OpenRouter spend (via the dashboard) rather
-  than ship a made-up cost estimate.
-- The decision *not* to touch the EAST detector or its merge logic this
-  close to the deadline, even after finding real box-quality issues live
-  — weighed the spec's explicit "raw accuracy isn't graded if you
-  measured and handled it" against the cost of re-validating a detector
-  swap with no time buffer, and chose to document the limitation instead.
+  (e.g. accepting the VLM prompt's precision/recall tradeoff).
+- Reading and judging actual VLM outputs against known-good values — every
+  accuracy claim here is checked against a real photo, not assumed correct
+  because the code ran without error.
+- Measuring real OpenRouter spend from the dashboard instead of shipping
+  a made-up cost estimate.
+- Not touching the EAST detector this close to the deadline even after
+  finding real box-quality issues live — weighed the spec's "raw accuracy
+  isn't graded if measured and handled" against re-validation cost with no
+  time buffer, and chose to document instead of chase.
 
 ## Cost of using AI to build this
 
