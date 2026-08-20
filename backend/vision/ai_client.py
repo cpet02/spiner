@@ -1,8 +1,7 @@
 """
 Single choke point for all model calls. Every place in the codebase that
-needs a VLM/LLM response goes through call_vision_model() or call_text_model().
-To swap providers (OpenRouter -> direct Anthropic/OpenAI/etc.), only this
-file changes.
+needs a VLM response goes through call_vision_model(). To swap providers
+(OpenRouter -> direct Anthropic/OpenAI/etc.), only this file changes.
 """
 import base64
 import requests
@@ -50,26 +49,6 @@ def call_vision_model(prompt: str, image_bytes: bytes, mime_type: str = "image/j
         # of the same photo producing a different auto-add count run to
         # run during testing.
         "temperature": 0,
-    }
-
-    resp = requests.post(OPENROUTER_URL, headers=_headers(), json=payload, timeout=60)
-    if resp.status_code != 200:
-        raise AIClientError(f"OpenRouter error {resp.status_code}: {resp.text}")
-
-    data = resp.json()
-    try:
-        return data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError) as e:
-        raise AIClientError(f"Unexpected response shape: {data}") from e
-
-
-def call_text_model(prompt: str, model: str | None = None, max_tokens: int = 1024) -> str:
-    """Plain text-in, text-out call. Useful for post-processing VLM output,
-    generating structured summaries, etc."""
-    payload = {
-        "model": model or settings.AI_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens,
     }
 
     resp = requests.post(OPENROUTER_URL, headers=_headers(), json=payload, timeout=60)

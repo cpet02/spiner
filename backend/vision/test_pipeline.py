@@ -66,6 +66,7 @@ def test_good_read_matches_catalog_and_reports_latency_and_cost():
     ok = [b for b in result["books"] if b["status"] == "ok"]
     assert ok
     assert ok[0]["match"]["title"] == "Dune"
+    assert ok[0]["match"]["isbn"]
     assert ok[0]["band"] == "auto"
     assert "latency_s" in result
     assert "estimated_cost_usd" in result

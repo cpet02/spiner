@@ -225,10 +225,11 @@ def run_pipeline(image_bytes: bytes) -> dict:
             "band": top.band if top else "none",
             "match": {
                 "title": top.entry.title, "author": top.entry.author,
-                "score": top.score,
+                "isbn": top.entry.isbn, "score": top.score,
             } if top and top.band != "none" else None,
             "candidates": [
-                {"title": c.entry.title, "author": c.entry.author, "score": round(c.score, 1)}
+                {"title": c.entry.title, "author": c.entry.author,
+                 "isbn": c.entry.isbn, "score": round(c.score, 1)}
                 for c in candidates
             ],
         })

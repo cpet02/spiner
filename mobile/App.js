@@ -154,11 +154,11 @@ export default function App() {
   return null;
 }
 
-async function postToLibrary({ title, author, score } = {}) {
+async function postToLibrary({ title, author, isbn, score } = {}) {
   const res = await fetch(`${API_BASE}/library/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, author: author || '', match_score: score }),
+    body: JSON.stringify({ title, author: author || '', isbn: isbn || '', match_score: score }),
   });
   // fetch only rejects on a network failure -- a 400/500 resolves
   // normally, so without this check a failed save (e.g. a validation

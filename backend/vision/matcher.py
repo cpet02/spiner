@@ -5,8 +5,9 @@ Design:
 - Each catalog entry's title+alt_titles and author+author_alt_forms are
   flattened into unordered pools. No primary/alt priority — we take max
   similarity across all forms in the pool.
-- Title and author are scored separately (rapidfuzz WRatio, handles
-  substrings/reordering/typos), then combined into one confidence score.
+- Title and author are scored separately (rapidfuzz token_sort_ratio --
+  WRatio was tried first and rejected, see below), then combined into one
+  confidence score.
 - Confidence bands: >= AUTO_THRESHOLD -> auto-confirm, >= REVIEW_THRESHOLD
   -> human review, below -> no match / discard.
 """
